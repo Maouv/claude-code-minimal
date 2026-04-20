@@ -22,7 +22,23 @@ if [ "$PYTHON_MAJOR" -lt 3 ] || ([ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" 
     exit 1
 fi
 
-echo "✓ Python $PYTHON_VERSION detected"
+echo "  python $PYTHON_VERSION"
+
+# Install questionary (required for --init wizard)
+if python3 -c "import questionary" 2>/dev/null; then
+    echo "  questionary already installed"
+else
+    echo "  installing questionary..."
+    if python3 -m pip install questionary --quiet 2>/dev/null; then
+        echo "  questionary installed"
+    elif python3 -m pip install questionary --quiet --break-system-packages 2>/dev/null; then
+        echo "  questionary installed (--break-system-packages)"
+    else
+        echo "  warning: could not install questionary"
+        echo "  run manually: pip install questionary"
+        echo "  ccmin --init will not work without it"
+    fi
+fi
 
 # Make ccmin.py executable
 chmod +x "$CCMIN_SCRIPT"
@@ -42,15 +58,15 @@ case $choice in
         if touch /usr/local/bin/test_ccmin_write 2>/dev/null; then
             rm -f /usr/local/bin/test_ccmin_write
             ln -sf "$CCMIN_SCRIPT" /usr/local/bin/ccmin
-            echo "✓ Symlink created: /usr/local/bin/ccmin → $CCMIN_SCRIPT"
-            echo "✓ You can now run 'ccmin' from anywhere"
+            echo "  symlink created: /usr/local/bin/ccmin → $CCMIN_SCRIPT"
+            echo "  you can now run 'ccmin' from anywhere"
         else
-            echo "⚠ Permission denied for /usr/local/bin"
-            echo "  Trying sudo..."
+            echo "  permission denied for /usr/local/bin"
+            echo "  trying sudo..."
             if sudo ln -sf "$CCMIN_SCRIPT" /usr/local/bin/ccmin 2>/dev/null; then
-                echo "✓ Symlink created with sudo: /usr/local/bin/ccmin → $CCMIN_SCRIPT"
+                echo "  symlink created with sudo: /usr/local/bin/ccmin → $CCMIN_SCRIPT"
             else
-                echo "⚠ Could not create symlink. Falling back to bashrc method..."
+                echo "  could not create symlink, falling back to bashrc..."
                 choice=2
             fi
         fi
@@ -62,19 +78,19 @@ case $choice in
 
         if [ -f "$BASHRC" ]; then
             if grep -q "alias ccmin=" "$BASHRC"; then
-                echo "✓ ccmin alias already exists in $BASHRC"
+                echo "  alias already in $BASHRC"
             else
                 echo "" >> "$BASHRC"
                 echo "# ccmin - Claude Code minimal mode launcher" >> "$BASHRC"
                 echo "$ALIAS_LINE" >> "$BASHRC"
-                echo "✓ Alias added to $BASHRC"
+                echo "  alias added to $BASHRC"
             fi
         else
             echo "$ALIAS_LINE" >> "$BASHRC"
-            echo "✓ Created $BASHRC with ccmin alias"
+            echo "  created $BASHRC with ccmin alias"
         fi
 
-        echo "✓ Run 'source ~/.bashrc' or restart your shell to use ccmin"
+        echo "  run 'source ~/.bashrc' or restart your shell to use ccmin"
         ;;
     3)
         echo ""
@@ -104,7 +120,7 @@ esac
 
 if [ $choice -ne 3 ]; then
     echo ""
-    echo "🚀 Installation complete!"
+    echo "  done"
     echo ""
     echo "Next steps:"
     echo "  ccmin --init     # Initialize ccmin configuration"

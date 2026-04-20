@@ -11,6 +11,7 @@ import shutil
 import sys
 from pathlib import Path
 
+
 # Resolve real script location — handles symlinks correctly
 _SCRIPT_DIR = Path(os.path.realpath(os.path.abspath(__file__))).parent
 
@@ -92,175 +93,76 @@ def cmd_repair(args):
         print(f"Error: {e}")
 
 
+
 def cmd_init(args):
     """Initialize ccmin configuration."""
-    print("🚀 Initializing ccmin...")
+    from core.wizard import run as run_wizard
 
-    # Auto-fix corrupt symlink before doing anything else
+    result = run_wizard(
+        config_exists=CONFIG_PATH.exists(),
+        detect_launcher_fn=detect_launcher,
+        detect_claude_version_fn=detect_claude_version,
+    )
+    if result is None:
+        return
+
+    launcher            = result["launcher"]
+    scope               = result["scope"]
+    cwd                 = result["project_path"]
+    selected_mode       = result["selected_mode"]
+    custom_allow        = result["custom_allow"]
+    install_method      = result["install_method"]
+    fast_tools_enabled  = result["fast_tools_enabled"]
+    sr_fallback         = result["sr_fallback"]
+    repo_map_enabled    = result["repo_map_enabled"]
+    repo_map_max_tokens = result["repo_map_max_tokens"]
+
+    # Auto-fix corrupt symlink
     import os
     symlink_path = Path("/usr/local/bin/ccmin")
     if symlink_path.is_symlink() and not symlink_path.exists():
         try:
             symlink_path.unlink()
-            print("⚠ Removed corrupt symlink at /usr/local/bin/ccmin")
-        except Exception as e:
-            print(f"⚠ Could not remove corrupt symlink: {e}")
+        except Exception:
+            pass
 
-    # Guard: already initialized
-    if CONFIG_PATH.exists():
-        confirm = input("ccmin is already initialized. Reinitialize? [y/n]: ").strip().lower()
-        if confirm != "y":
-            print("Cancelled.")
-            return
-
-    # Launcher selection
-    try:
-        detected_launcher, _ = detect_launcher()
-    except FileNotFoundError:
-        detected_launcher = None
-
-    print("\nLauncher:")
-    print("  [1] claude (default - Claude Code official)")
-    print("  [2] Custom launcher")
-    launcher_choice = input("Choose [1]: ").strip() or "1"
-
-    if launcher_choice == "2":
-        while True:
-            custom = input("Launcher name: ").strip() or "claude"
-            binary = custom.split()[0]  # handle multi-word like 'ccr code'
-            if shutil.which(binary):
-                launcher = custom
-                break
-            print(f"⚠ '{binary}' not found in PATH. Try again.")
-    else:
-        launcher = "claude"
-
-    # Scope selection
-    cwd = os.getcwd()
-    print("\nScope:")
-    print("  [1] local  - project only")
-    print("  [2] global - user-wide")
-    scope_choice = input("Choose [1]: ").strip() or "1"
-    scope = "global" if scope_choice == "2" else "local"
-
-    # Project path
-    print(f"\nProject path: {cwd}")
-    path_confirm = input("Use this path? [y/n]: ").strip().lower()
-    if path_confirm == "n":
-        project_input = input("Enter project path: ").strip()
-        if project_input:
-            cwd = project_input
-
-    # Mode selection
-    print("\nMode:")
-    print("  [1] very-strict - Read requires approval, Write, Edit, MultiEdit (no git)")
-    print("  [2] minimal     - Read, Write, Edit, MultiEdit (no git)")
-    print("  [3] standard    - Read, Write, Edit, MultiEdit, Bash(git *)")
-    print("  [4] custom      - define your own tools")
-    mode_choice = input("Choose [1]: ").strip() or "1"
-
-    if mode_choice == "4":
-        print("Enter tools separated by comma (e.g. Read,Write,Bash(git *)):")
-        custom_tools = input("> ").strip()
-        selected_mode = "custom"
-        custom_allow = [t.strip() for t in custom_tools.split(",") if t.strip()]
-        for t in custom_allow:
-            if t == t.lower() and "(" not in t:
-                print(f"⚠ '{t}' looks lowercase and has no pattern — may not work as expected")
-    elif mode_choice == "3":
-        selected_mode = "standard"
-        custom_allow = None
-    elif mode_choice == "2":
-        selected_mode = "minimal"
-        custom_allow = None
-    else:
-        selected_mode = "very-strict"
-        custom_allow = None
-
-    # Choose install method
-    print("\nInstall method:")
-    print("  [1] Symlink /usr/local/bin/ccmin")
-    print("  [2] Bashrc alias")
-    print("  [3] Skip")
-    install_choice = input("Choose [1]: ").strip() or "1"
-
-    install_method = {
-        "1": "symlink",
-        "2": "bashrc",
-        "3": "skip"
-    }.get(install_choice, "symlink")
-
-    # Fast tools config
-    print("\nFast Tools (fast_read / fast_edit / fast_multi_edit):")
-    print("  Token-saving replacements for built-in Read/Edit.")
-    print("  Uses udiff patches + session hash tracking.")
-    fast_tools_choice = input("Enable fast tools? [y/n] (default n): ").strip().lower()
-    fast_tools_enabled = fast_tools_choice == "y"
-
-    sr_fallback = True
-    if fast_tools_enabled:
-        sr_input = input("Enable search-replace fallback if udiff fails? [y/n] (default y): ").strip().lower()
-        sr_fallback = sr_input != "n"
-
-    # Repo map config
-    print("\nRepo Map (inject project structure into system prompt):")
-    print("  Saves tokens by giving Claude file structure upfront.")
-    print("  Tradeoff: uses tokens at session start (default cap: 1024).")
-    repo_map_choice = input("Enable repo map? [y/n] (default n): ").strip().lower()
-    repo_map_enabled = repo_map_choice == "y"
-
-    repo_map_max_tokens = 1024
-    if repo_map_enabled:
-        mt_input = input("Max tokens for repo map? [default 1024]: ").strip()
-        if mt_input.isdigit():
-            repo_map_max_tokens = int(mt_input)
-
-    # Create config
+    # Build and save config
     prompt_file_name = "minimal-prompt-fast.txt" if fast_tools_enabled else "minimal-prompt.txt"
     config = {
-        "launcher": launcher,
-        "scope": scope,
-        "project_path": cwd,
-        "prompt_file": str(CCMIN_DIR / prompt_file_name),
-        "backup_limit": 10,
-        "last_verified_claude_version": detect_claude_version(launcher),
-        "install_method": install_method,
+        "launcher":                       launcher,
+        "scope":                          scope,
+        "project_path":                   cwd,
+        "prompt_file":                    str(CCMIN_DIR / prompt_file_name),
+        "backup_limit":                   10,
+        "last_verified_claude_version":   detect_claude_version(launcher),
+        "install_method":                 install_method,
         "repo_map": {
-            "enabled": repo_map_enabled,
+            "enabled":    repo_map_enabled,
             "max_tokens": repo_map_max_tokens,
-            "exclude": []
+            "exclude":    [],
         },
         "fast_tools": {
-            "enabled": fast_tools_enabled,
-            "sr_fallback": sr_fallback
-        }
+            "enabled":     fast_tools_enabled,
+            "sr_fallback": sr_fallback,
+        },
     }
-
-    # Save config
     save_config(config)
-    print(f"✓ Config saved to {CONFIG_PATH}")
+    print(f"  config       {CONFIG_PATH}")
 
-    # Copy templates
     CCMIN_DIR.mkdir(parents=True, exist_ok=True)
 
-    prompt_source_name = "minimal-prompt-fast.txt" if fast_tools_enabled else "minimal-prompt.txt"
-    prompt_source = TEMPLATES_DIR / prompt_source_name
-    prompt_dest = CCMIN_DIR / "minimal-prompt.txt"
+    prompt_source = TEMPLATES_DIR / ("minimal-prompt-fast.txt" if fast_tools_enabled else "minimal-prompt.txt")
+    prompt_dest   = CCMIN_DIR / "minimal-prompt.txt"
     if prompt_source.exists():
-        prompt_dest.write_text(prompt_source.read_text(encoding='utf-8'), encoding='utf-8')
-        print(f"✓ Prompt file copied to {prompt_dest} ({prompt_source_name})")
+        prompt_dest.write_text(prompt_source.read_text(encoding="utf-8"), encoding="utf-8")
+        print(f"  prompt       {prompt_dest}")
 
-    # Install custom tools ke ~/.ccmin/tools/ (hanya kalau fast_tools enabled)
     if fast_tools_enabled:
-        tool_results = install_tools(_SCRIPT_DIR)
-        if tool_results:
-            for tool_name, status in tool_results:
-                print(f"✓ Tool {tool_name}: {status}")
+        for tool_name, status in (install_tools(_SCRIPT_DIR) or []):
+            print(f"  tool         {tool_name}: {status}")
 
-    # Generate .claude/commands/add.md
     commands_dir = Path(cwd) / ".claude" / "commands"
     commands_dir.mkdir(parents=True, exist_ok=True)
-
     add_cmd = commands_dir / "add.md"
     if not add_cmd.exists():
         add_cmd.write_text(
@@ -268,46 +170,41 @@ def cmd_init(args):
             "File is now in context. Wait for the user's instruction.\n"
             "Do not read any other files.\n"
         )
-        print(f"✓ Created /add command: {add_cmd}")
+        print(f"  /add         {add_cmd}")
 
-    # Backup existing settings if they exist, then write selected mode template
     settings_path = get_settings_path(scope, cwd)
     if settings_path.exists():
         try:
             backup_path = backup(settings_path, scope, config["backup_limit"])
-            print(f"✓ Existing settings backed up to {backup_path}")
+            print(f"  backup       {backup_path}")
         except Exception as e:
-            print(f"⚠ Backup failed: {e}")
+            print(f"  backup failed: {e}")
 
-    # Write settings based on selected mode
     settings_path.parent.mkdir(parents=True, exist_ok=True)
     if selected_mode == "custom":
         template = json.loads((TEMPLATES_DIR / "settings.min.json").read_text(encoding="utf-8"))
         template["permissions"]["allow"] = custom_allow
         atomic_write(settings_path, json.dumps(template, indent=2))
     elif selected_mode == "standard":
-        src_name = "settings.std-fast.json" if fast_tools_enabled else "settings.std.json"
-        src = TEMPLATES_DIR / src_name
+        src = TEMPLATES_DIR / ("settings.std-fast.json" if fast_tools_enabled else "settings.std.json")
         settings_path.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
     elif selected_mode == "minimal":
-        src_name = "settings.min-fast.json" if fast_tools_enabled else "settings.min.json"
-        src = TEMPLATES_DIR / src_name
+        src = TEMPLATES_DIR / ("settings.min-fast.json" if fast_tools_enabled else "settings.min.json")
         settings_path.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
     else:  # very-strict
-        src_name = "settings.vstrict-fast.json" if fast_tools_enabled else "settings.vstrict.json"
-        src = TEMPLATES_DIR / src_name
+        src = TEMPLATES_DIR / ("settings.vstrict-fast.json" if fast_tools_enabled else "settings.vstrict.json")
         settings_path.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
-    print(f"✓ Settings written ({selected_mode}): {settings_path}")
+    print(f"  settings     {settings_path}  ({selected_mode})")
 
-    # Install method
     if install_method == "symlink":
         _install_symlink()
     elif install_method == "bashrc":
         _install_bashrc()
     else:
-        print("\nManual installation:")
-        print(f"  alias ccmin='python3 {Path(__file__).absolute()}'")
-        print("  Add to your ~/.bashrc or ~/.zshrc")
+        print(f"  manual install: alias ccmin='python3 {Path(__file__).absolute()}'")
+        print("  add to ~/.bashrc or ~/.zshrc")
+
+    print()
 
 
 def _install_symlink():
@@ -326,9 +223,9 @@ def _install_symlink():
         symlink_path.symlink_to(ccmin_script)
         # chmod the real file, never the symlink
         ccmin_script.chmod(ccmin_script.stat().st_mode | stat.S_IEXEC)
-        print(f"✓ Symlink created: {symlink_path} → {ccmin_script}")
+        print(f"  symlink      {symlink_path} → {ccmin_script}")
     except PermissionError:
-        print("⚠ Permission denied for /usr/local/bin, falling back to bashrc")
+        print("  permission denied for /usr/local/bin, falling back to bashrc")
         _install_bashrc()
 
 
@@ -343,12 +240,12 @@ def _install_bashrc():
         if "alias ccmin=" not in content:
             with open(bashrc_path, 'a', encoding='utf-8') as f:
                 f.write(f"\n{alias_line}")
-            print(f"✓ Alias added to {bashrc_path}")
-            print("  Run 'source ~/.bashrc' or restart your shell")
+            print(f"  alias added to {bashrc_path}")
+            print("  run: source ~/.bashrc")
         else:
-            print(f"✓ ccmin alias already exists in {bashrc_path}")
+            print(f"  alias already in {bashrc_path}")
     else:
-        print(f"⚠ {bashrc_path} not found. Add this alias manually:")
+        print(f"  {bashrc_path} not found, add manually:")
         print(f"  {alias_line.strip()}")
 
 
@@ -718,3 +615,4 @@ Examples:
 
 if __name__ == "__main__":
     main()
+
