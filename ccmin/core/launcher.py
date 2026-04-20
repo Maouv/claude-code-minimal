@@ -48,7 +48,8 @@ def build_command(config: dict, cwd: str) -> list[str]:
             # very-strict: Read is in ask, not allow
             if "Read" in ask and "Read" not in allow:
                 is_very_strict = True
-                tools = ",".join([t for t in allow if t])  # exclude Read from --tools
+                # Keep Read in --tools so model knows it exists, controlled via --allowedTools
+                tools = ",".join([t for t in allow if t]) + ",Read"
             elif allow:
                 tools = ",".join(allow)
         except json.JSONDecodeError:
@@ -61,6 +62,11 @@ def build_command(config: dict, cwd: str) -> list[str]:
         "--tools", tools,
         "--system-prompt-file", str(tmp_prompt),
     ]
+
+    # very-strict: Read requires approval — pass allowedTools without Read
+    if is_very_strict:
+        allowed = ",".join([t for t in tools.split(",") if t and t != "Read"])
+        command += ["--allowedTools", allowed]
 
     return command
 
