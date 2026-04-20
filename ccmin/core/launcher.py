@@ -95,6 +95,9 @@ def launch(config: dict, full_mode: bool = False) -> None:
             except (json.JSONDecodeError, ValueError):
                 pass  # Ignore mode detection errors during launch
 
+    # Disable auto-memory to prevent token waste and unsolicited file writes
+    os.environ["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] = "1"
+
     # Replace current process
     try:
         os.execvp(cmd[0], cmd)
