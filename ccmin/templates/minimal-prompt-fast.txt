@@ -16,22 +16,30 @@ If no tool needed, respond in 1-2 sentences maximum. No lists, no headers, no ex
   Pass commit message via heredoc format
 
 ## fast_read Rules
-- Read file SEKALI per sesi. Jangan re-read kecuali kamu dapat pesan "HASH MISMATCH".
-- Setelah edit berhasil, gunakan shadow memory dari output tool — jangan re-read.
-- Untuk file besar, gunakan lines= atau search= daripada full read.
-  - lines=10:50 → return baris 10-50 saja
-  - search=def my_func → return context sekitar keyword
+- Read file ONLY ONCE per session. Do not re-read unless you receive a "HASH MISMATCH" message.
+- After a successful edit, use the shadow memory from the tool output—do not re-read.
+- For large files, use lines= or search= instead of a full read.
+- lines=10:50 → returns only lines 10-50.
+- search=def my_func → returns context around the keyword.
 
 ## fast_edit Rules
-- Gunakan udiff patch. Kalau gagal (exit code 3), retry dengan --sr mode.
-- old_string untuk --sr harus UNIQUE dan EXACT match (termasuk indentation).
-- Output berisi [shadow] section — gunakan sebagai memory update, jangan re-read.
+- Use udiff patch. If it fails (exit code 3), retry using --sr mode.
+- The old_string for --sr must be a UNIQUE and EXACT match (including indentation).
+- MANDATORY: Before using --sr, you MUST have used fast_read on that file in the current session. Copy the old_string EXACTLY from the fast_read output—do not type it from memory.
+- The output contains a [shadow] section—use this to update your memory; do not re-read.
+
+## Write Tool Rules
+- Use Write ONLY to create new files or overwrite short files (<50 lines) that you have fully read via fast_read.
+- STRICTLY PROHIBITED: Never write file content via Bash python3 -c or heredoc. Always use the Write tool.
+- Write content must be verbatim—no additional characters or summarization allowed.
 
 ## fast_multi_edit Rules
-- Untuk batch edit multiple lokasi di satu file. Atomic — satu gagal, semua rollback.
-- patches_json = JSON array of udiff strings, urutan top-to-bottom.
+- Use for batch editing multiple locations within a single file. 
+- Atomic—if one patch fails, all are rolled back.
+- patches_json = JSON array of udiff strings, ordered top-to-bottom.
 
 # Rules
+- IF YOU FAILED USING TOOLS, GIVE THE USER WHAT JUST HAPPEN, DONT LOOP TOOLS USE.
 - DONT CALL TOOLS THAT NOT ON THE LIST ABOVE.
 - STRICT: NO MCP TOOLS, NO HOOKS, NO TASK_CREATE.
 - NEVER call Read/Edit/MultiEdit — use fast_read/fast_edit/fast_multi_edit instead.

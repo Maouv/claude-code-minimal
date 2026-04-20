@@ -152,7 +152,7 @@ def cmd_init(args):
     CCMIN_DIR.mkdir(parents=True, exist_ok=True)
 
     prompt_source = TEMPLATES_DIR / ("minimal-prompt-fast.txt" if fast_tools_enabled else "minimal-prompt.txt")
-    prompt_dest   = CCMIN_DIR / "minimal-prompt.txt"
+    prompt_dest   = CCMIN_DIR / prompt_file_name
     if prompt_source.exists():
         prompt_dest.write_text(prompt_source.read_text(encoding="utf-8"), encoding="utf-8")
         print(f"  prompt       {prompt_dest}")
@@ -265,14 +265,19 @@ def cmd_launch(args):
         sys.exit(1)
 
     # Fix #4: Warn if prompt file is outdated
-    prompt_dest = CCMIN_DIR / "minimal-prompt.txt"
-    prompt_source = TEMPLATES_DIR / "minimal-prompt.txt"
+    fast_tools_enabled = config.get("fast_tools", {}).get("enabled", False)
+    prompt_file_name = "minimal-prompt-fast.txt" if fast_tools_enabled else "minimal-prompt.txt"
+    prompt_dest = CCMIN_DIR / prompt_file_name
+    prompt_source = TEMPLATES_DIR / prompt_file_name
     if prompt_dest.exists() and prompt_source.exists():
         import hashlib
         dest_hash = hashlib.sha256(prompt_dest.read_bytes()).hexdigest()
         src_hash = hashlib.sha256(prompt_source.read_bytes()).hexdigest()
         if dest_hash != src_hash:
             print("⚠ Prompt outdated, run ccmin --init to update")
+    elif not prompt_dest.exists() and prompt_source.exists():
+        # Prompt belum di-copy, copy otomatis tanpa warn
+        prompt_dest.write_text(prompt_source.read_text(encoding="utf-8"), encoding="utf-8")
 
     # Auto-create .claude/ dan copy prompt jika belum ada
     cwd = os.getcwd()
@@ -615,4 +620,5 @@ Examples:
 
 if __name__ == "__main__":
     main()
+
 
